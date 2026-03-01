@@ -1,27 +1,20 @@
 from __future__ import annotations
 
 import argparse
-import sys
 from pathlib import Path
 
 import soundfile as sf
 import torch
+try:
+    from qwen_tts import Qwen3TTSModel
+except ImportError as exc:
+    raise SystemExit(
+        "Missing dependency 'qwen-tts'. Install with: pip install -r requirements.txt"
+    ) from exc
 
 DEFAULT_HF_MODEL = "Qwen/Qwen3-TTS-12Hz-1.7B-Base"
 DEFAULT_MODEL_DIR = Path("models") / "Qwen3-TTS-12Hz-1.7B-Base"
 DEFAULT_OUTPUT = Path("outputs") / "voice_clone.wav"
-
-
-def add_local_qwen_tts_path() -> None:
-    # Reuse sibling source repo if present: ../Qwen3-TTS/qwen_tts
-    source_root = Path(__file__).resolve().parent.parent / "Qwen3-TTS"
-    if source_root.exists() and source_root.as_posix() not in sys.path:
-        sys.path.insert(0, source_root.as_posix())
-
-
-add_local_qwen_tts_path()
-
-from qwen_tts import Qwen3TTSModel
 
 
 def detect_device() -> str:
