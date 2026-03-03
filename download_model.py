@@ -7,6 +7,7 @@ from huggingface_hub import snapshot_download
 
 BASE_MODEL_ID = "Qwen/Qwen3-TTS-12Hz-1.7B-Base"
 TOKENIZER_ID = "Qwen/Qwen3-TTS-Tokenizer-12Hz"
+STT_MODEL_ID = "openai/whisper-small"
 
 
 def parse_args() -> argparse.Namespace:
@@ -20,6 +21,16 @@ def parse_args() -> argparse.Namespace:
         "--skip-tokenizer",
         action="store_true",
         help="Skip tokenizer download.",
+    )
+    parser.add_argument(
+        "--stt-model-id",
+        default=STT_MODEL_ID,
+        help="STT model repo id to download for auto transcription.",
+    )
+    parser.add_argument(
+        "--skip-stt",
+        action="store_true",
+        help="Skip STT model download.",
     )
     return parser.parse_args()
 
@@ -48,6 +59,11 @@ def main() -> None:
         print(f"Downloading {TOKENIZER_ID} ...")
         tokenizer_path = download_repo(TOKENIZER_ID, models_dir)
         print(f"Saved tokenizer to: {tokenizer_path.resolve()}")
+
+    if not args.skip_stt:
+        print(f"Downloading {args.stt_model_id} ...")
+        stt_path = download_repo(args.stt_model_id, models_dir)
+        print(f"Saved STT model to: {stt_path.resolve()}")
 
 
 if __name__ == "__main__":
