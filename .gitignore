@@ -1,3 +1,5 @@
+models/
+
 inputs/*
 !inputs/Luffy.m4a
 
