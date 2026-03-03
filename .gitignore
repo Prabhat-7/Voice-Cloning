@@ -1,5 +1,5 @@
 inputs/*
-!inputs/my_voice.m4a
+!inputs/Luffy.m4a
 
 outputs/*
 !outputs/demo_clone_standalone2.wav
