@@ -25,6 +25,26 @@ This downloads to:
 - `models/Qwen3-TTS-12Hz-1.7B-Base`
 - `models/Qwen3-TTS-Tokenizer-12Hz`
 
+## Run GUI
+
+Launch the web UI:
+
+```bash
+uv run --python .venv/bin/python gui_app.py --host 127.0.0.1 --port 7860
+```
+
+Then open:
+
+- `http://127.0.0.1:7860`
+
+GUI flow:
+
+- Upload or record reference audio
+- Add reference transcript (optional, but improves quality)
+- Enter target text to synthesize
+- Generate cloned speech
+- Swipe/seek in waveform player and download the output WAV
+
 ## Run Voice Cloning
 
 With transcript (best quality):
