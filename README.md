@@ -3,7 +3,7 @@
 This folder is a focused voice-cloning extraction from `Qwen3-TTS`, containing only:
 
 - `app.py`: CLI app to clone voice from a reference audio clip
-- `download_model.py`: downloads only the Base voice-clone model + tokenizer
+- `download_model.py`: downloads Base voice-clone model + tokenizer + Whisper STT model
 
 ## Setup
 
@@ -24,6 +24,12 @@ This downloads to:
 
 - `models/Qwen3-TTS-12Hz-1.7B-Base`
 - `models/Qwen3-TTS-Tokenizer-12Hz`
+- `models/whisper-small`
+
+Optional flags:
+
+- `--skip-stt` to skip Whisper download
+- `--stt-model-id openai/whisper-small` to choose a different STT repo
 
 ## Run GUI
 
@@ -40,10 +46,18 @@ Then open:
 GUI flow:
 
 - Upload or record reference audio
-- Add reference transcript (optional, but improves quality)
+- Set **Language** (for most English clips, keep it as `English`; use `Auto` to detect language)
+- Click **Auto Transcribe Reference Audio** to fill transcript from the audio
+- Edit the transcript manually if needed (it stays editable)
 - Enter target text to synthesize
 - Generate cloned speech
 - Swipe/seek in waveform player and download the output WAV
+
+Notes:
+
+- Auto-transcribe defaults to local `models/whisper-small` if it exists, otherwise `openai/whisper-small`.
+- For long audio (>30s), timestamps are enabled automatically for Whisper long-form transcription.
+- For `.m4a` and other compressed formats, make sure `ffmpeg` is installed (`ffmpeg`/`ffprobe` in `PATH`).
 
 ## Run Voice Cloning
 
