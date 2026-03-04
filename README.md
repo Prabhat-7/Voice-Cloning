@@ -28,6 +28,7 @@ Notes:
 - Works on macOS + Apple Silicon only.
 - Uses MLX for tokenizer decode (and optionally quantizer), while preserving `generate_voice_clone` behavior.
 - Requires `eris-voice/src` (or pass a custom path with `--eris-src-dir`).
+- Current biggest latency is still the Base model talker generation; MLX hybrid mainly accelerates decode stages.
 
 ## Download Model Weights
 
@@ -67,6 +68,7 @@ GUI flow:
 - Enter target text to synthesize
 - Generate cloned speech
 - Swipe/seek in waveform player and download the output WAV
+- Repeated runs with the same reference audio now reuse a cached voice-clone prompt to reduce per-run overhead.
 
 Notes:
 

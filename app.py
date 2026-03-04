@@ -135,6 +135,7 @@ def main() -> None:
         ref_text=ref_text if ref_text else None,
         instruct=args.voice_description.strip() if args.voice_description else None,
         x_vector_only_mode=use_x_vector_only_mode,
+        non_streaming_mode=True,
     )
 
     output_path = Path(args.output)

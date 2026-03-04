@@ -30,6 +30,8 @@ NETWORK_ERROR_HINTS = (
     "connection error",
     "temporarily unavailable",
 )
+VOICE_CLONE_PROMPT_CACHE_MAX = 8
+VOICE_CLONE_PROMPT_CACHE: dict[tuple[Any, ...], Any] = {}
 
 
 def resolve_default_stt_model() -> str:
@@ -181,6 +183,49 @@ def normalize_audio_path(ref_audio_path: Any) -> str | None:
         if isinstance(path_value, str):
             return path_value
     return None
+
+
+def make_audio_signature(audio_path: str | None) -> str:
+    if not audio_path:
+        return ""
+    p = Path(audio_path).expanduser()
+    if not p.exists():
+        return audio_path
+    try:
+        stat = p.stat()
+    except OSError:
+        return p.resolve().as_posix()
+    return f"{p.resolve().as_posix()}::{stat.st_mtime_ns}::{stat.st_size}"
+
+
+def get_cached_voice_clone_prompt(
+    model: Qwen3TTSModel,
+    ref_audio_path: str,
+    clean_ref_text: str,
+    use_x_vector_only_mode: bool,
+):
+    ref_text_for_prompt = None if use_x_vector_only_mode else clean_ref_text
+    cache_key = (
+        id(model),
+        make_audio_signature(ref_audio_path),
+        ref_text_for_prompt or "",
+        bool(use_x_vector_only_mode),
+    )
+    cached = VOICE_CLONE_PROMPT_CACHE.get(cache_key)
+    if cached is not None:
+        return cached, True
+
+    prompt_items = model.create_voice_clone_prompt(
+        ref_audio=ref_audio_path,
+        ref_text=ref_text_for_prompt,
+        x_vector_only_mode=use_x_vector_only_mode,
+    )
+
+    if len(VOICE_CLONE_PROMPT_CACHE) >= VOICE_CLONE_PROMPT_CACHE_MAX:
+        oldest_key = next(iter(VOICE_CLONE_PROMPT_CACHE))
+        VOICE_CLONE_PROMPT_CACHE.pop(oldest_key, None)
+    VOICE_CLONE_PROMPT_CACHE[cache_key] = prompt_items
+    return prompt_items, False
 
 
 def resolve_transcription_language(language: str) -> str | None:
@@ -414,15 +459,23 @@ def clone_voice(
 
     clean_ref_text = ref_text.strip()
     use_x_vector_only_mode = x_vector_only_mode or clean_ref_text == ""
+    try:
+        voice_clone_prompt, cache_hit = get_cached_voice_clone_prompt(
+            model=model,
+            ref_audio_path=ref_audio_path,
+            clean_ref_text=clean_ref_text,
+            use_x_vector_only_mode=use_x_vector_only_mode,
+        )
+    except Exception as exc:
+        return None, None, f"Reference prompt preparation failed: {type(exc).__name__}: {exc}"
 
     try:
         wavs, sample_rate = model.generate_voice_clone(
             text=target_text.strip(),
             language=language.strip() or "English",
-            ref_audio=ref_audio_path,
-            ref_text=clean_ref_text if clean_ref_text else None,
+            voice_clone_prompt=voice_clone_prompt,
             instruct=voice_description.strip() if voice_description.strip() else None,
-            x_vector_only_mode=use_x_vector_only_mode,
+            non_streaming_mode=True,
         )
     except Exception as exc:
         return None, None, f"{type(exc).__name__}: {exc}"
@@ -434,9 +487,10 @@ def clone_voice(
 
     mode_text = "x-vector only mode" if use_x_vector_only_mode else "reference transcript mode"
     backend_text = "mlx-hybrid" if use_mlx_hybrid else "pytorch"
+    prompt_text = "prompt cache hit" if cache_hit else "prompt cache miss"
     status = (
         f"Generated successfully on {effective_device} ({effective_dtype_name}) "
-        f"using {mode_text} [{backend_text}]. Saved to: {output_path}"
+        f"using {mode_text} [{backend_text}, fast mode, {prompt_text}]. Saved to: {output_path}"
     )
     return output_path.as_posix(), output_path.as_posix(), status
 
