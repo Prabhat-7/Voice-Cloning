@@ -7,6 +7,7 @@ import soundfile as sf
 import torch
 try:
     from qwen_tts import Qwen3TTSModel
+    from qwen_tts.inference.mlx_hybrid import MLXHybridConfig, enable_mlx_hybrid_decoder
 except ImportError as exc:
     raise SystemExit(
         "Missing dependency 'qwen-tts'. Install with: pip install -r requirements.txt"
@@ -75,6 +76,21 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--hf-model", default=DEFAULT_HF_MODEL, help="Hugging Face model id fallback.")
     parser.add_argument("--device", default="auto", help="auto, mps, cpu, cuda:0, ...")
     parser.add_argument("--dtype", default="auto", choices=["auto", "float16", "bfloat16", "float32"])
+    parser.add_argument(
+        "--mlx-hybrid",
+        action="store_true",
+        help="Enable MLX hybrid decoder acceleration (Apple Silicon, experimental).",
+    )
+    parser.add_argument(
+        "--mlx-disable-quantizer",
+        action="store_true",
+        help="When --mlx-hybrid is enabled, keep quantizer on PyTorch and use MLX for decoder blocks only.",
+    )
+    parser.add_argument(
+        "--eris-src-dir",
+        default="eris-voice/src",
+        help="Path to eris-voice src directory for MLX modules.",
+    )
     return parser.parse_args()
 
 
@@ -99,6 +115,18 @@ def main() -> None:
         device_map=device,
         dtype=dtype,
     )
+    if args.mlx_hybrid:
+        try:
+            message = enable_mlx_hybrid_decoder(
+                model,
+                config=MLXHybridConfig(
+                    use_mlx_quantizer=not args.mlx_disable_quantizer,
+                    eris_src_dir=args.eris_src_dir,
+                ),
+            )
+            print(message)
+        except Exception as exc:
+            raise SystemExit(f"Failed to enable MLX hybrid decoder: {type(exc).__name__}: {exc}") from exc
 
     wavs, sample_rate = model.generate_voice_clone(
         text=args.text,

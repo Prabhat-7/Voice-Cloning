@@ -13,6 +13,7 @@ import torch
 
 try:
     from qwen_tts import Qwen3TTSModel
+    from qwen_tts.inference.mlx_hybrid import MLXHybridConfig, enable_mlx_hybrid_decoder
 except ImportError as exc:
     raise SystemExit(
         "Missing dependency 'qwen-tts'. Install with: pip install -r requirements.txt"
@@ -64,12 +65,28 @@ def dtype_from_name(dtype_name: str) -> torch.dtype:
 
 
 @lru_cache(maxsize=4)
-def load_model(model_source: str, device: str, dtype_name: str) -> Qwen3TTSModel:
-    return Qwen3TTSModel.from_pretrained(
+def load_model(
+    model_source: str,
+    device: str,
+    dtype_name: str,
+    use_mlx_hybrid: bool,
+    use_mlx_quantizer: bool,
+    eris_src_dir: str,
+) -> Qwen3TTSModel:
+    model = Qwen3TTSModel.from_pretrained(
         model_source,
         device_map=device,
         dtype=dtype_from_name(dtype_name),
     )
+    if use_mlx_hybrid:
+        enable_mlx_hybrid_decoder(
+            model,
+            config=MLXHybridConfig(
+                use_mlx_quantizer=use_mlx_quantizer,
+                eris_src_dir=eris_src_dir,
+            ),
+        )
+    return model
 
 
 def resolve_asr_device(device: str) -> str | int:
@@ -369,6 +386,9 @@ def clone_voice(
     hf_model: str,
     device: str,
     dtype: str,
+    use_mlx_hybrid: bool,
+    use_mlx_quantizer: bool,
+    eris_src_dir: str,
 ):
     if not ref_audio_path:
         return None, None, "Reference audio is required."
@@ -380,7 +400,17 @@ def clone_voice(
 
     local_model_path = Path(model_dir).expanduser()
     model_source = local_model_path.as_posix() if local_model_path.exists() else hf_model
-    model = load_model(model_source, effective_device, effective_dtype_name)
+    try:
+        model = load_model(
+            model_source,
+            effective_device,
+            effective_dtype_name,
+            use_mlx_hybrid,
+            use_mlx_quantizer,
+            eris_src_dir,
+        )
+    except Exception as exc:
+        return None, None, f"Model initialization failed: {type(exc).__name__}: {exc}"
 
     clean_ref_text = ref_text.strip()
     use_x_vector_only_mode = x_vector_only_mode or clean_ref_text == ""
@@ -403,9 +433,10 @@ def clone_voice(
     sf.write(output_path.as_posix(), wavs[0], sample_rate)
 
     mode_text = "x-vector only mode" if use_x_vector_only_mode else "reference transcript mode"
+    backend_text = "mlx-hybrid" if use_mlx_hybrid else "pytorch"
     status = (
         f"Generated successfully on {effective_device} ({effective_dtype_name}) "
-        f"using {mode_text}. Saved to: {output_path}"
+        f"using {mode_text} [{backend_text}]. Saved to: {output_path}"
     )
     return output_path.as_posix(), output_path.as_posix(), status
 
@@ -416,6 +447,9 @@ def build_ui(
     default_stt_model: str,
     default_device: str,
     default_dtype: str,
+    default_use_mlx_hybrid: bool,
+    default_use_mlx_quantizer: bool,
+    default_eris_src_dir: str,
 ) -> gr.Blocks:
     with gr.Blocks(title="Voice Cloning GUI") as demo:
         gr.Markdown(
@@ -496,6 +530,18 @@ Use the output waveform player to drag/swipe through the audio, then download th
                         choices=["auto", "float16", "bfloat16", "float32"],
                         value=default_dtype,
                     )
+                    use_mlx_hybrid = gr.Checkbox(
+                        label="Enable MLX hybrid decoder acceleration (Apple Silicon, experimental)",
+                        value=default_use_mlx_hybrid,
+                    )
+                    use_mlx_quantizer = gr.Checkbox(
+                        label="Use MLX quantizer too (faster, more experimental)",
+                        value=default_use_mlx_quantizer,
+                    )
+                    eris_src_dir = gr.Textbox(
+                        label="Eris MLX source directory",
+                        value=default_eris_src_dir,
+                    )
 
         transcribe_btn.click(
             fn=transcribe_reference_audio,
@@ -516,6 +562,9 @@ Use the output waveform player to drag/swipe through the audio, then download th
                 hf_model,
                 device,
                 dtype,
+                use_mlx_hybrid,
+                use_mlx_quantizer,
+                eris_src_dir,
             ],
             outputs=[preview_audio, download_audio, status],
         )
@@ -530,6 +579,9 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--stt-model", default=resolve_default_stt_model())
     parser.add_argument("--device", default="auto")
     parser.add_argument("--dtype", default="auto", choices=["auto", "float16", "bfloat16", "float32"])
+    parser.add_argument("--mlx-hybrid", action="store_true")
+    parser.add_argument("--mlx-disable-quantizer", action="store_true")
+    parser.add_argument("--eris-src-dir", default="eris-voice/src")
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=7860)
     parser.add_argument("--share", action="store_true")
@@ -544,6 +596,9 @@ def main() -> None:
         default_stt_model=args.stt_model,
         default_device=args.device,
         default_dtype=args.dtype,
+        default_use_mlx_hybrid=args.mlx_hybrid,
+        default_use_mlx_quantizer=not args.mlx_disable_quantizer,
+        default_eris_src_dir=args.eris_src_dir,
     )
     demo.queue(default_concurrency_limit=1).launch(
         server_name=args.host,

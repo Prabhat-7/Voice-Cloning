@@ -14,6 +14,21 @@ uv pip install -U pip
 uv pip install -r requirements.txt
 ```
 
+## Optional: Apple Silicon MLX Hybrid Acceleration
+
+For faster voice cloning on Apple Silicon, this project can patch Qwen's decode path with MLX (hybrid mode).
+
+```bash
+git clone https://github.com/eris-ths/eris-voice.git
+uv pip install mlx
+```
+
+Notes:
+
+- Works on macOS + Apple Silicon only.
+- Uses MLX for tokenizer decode (and optionally quantizer), while preserving `generate_voice_clone` behavior.
+- Requires `eris-voice/src` (or pass a custom path with `--eris-src-dir`).
+
 ## Download Model Weights
 
 ```bash
@@ -58,6 +73,7 @@ Notes:
 - Auto-transcribe defaults to local `models/whisper-small` if it exists, otherwise `openai/whisper-small`.
 - For long audio (>30s), timestamps are enabled automatically for Whisper long-form transcription.
 - For `.m4a` and other compressed formats, make sure `ffmpeg` is installed (`ffmpeg`/`ffprobe` in `PATH`).
+- To use MLX hybrid in GUI by default, launch with `--mlx-hybrid`.
 
 ## Run Voice Cloning
 
@@ -80,6 +96,24 @@ uv run --python .venv/bin/python app.py \
   --text "This is a fast clone using speaker embedding only." \
   --language English \
   --output outputs/my_clone_xvec.wav
+```
+
+With MLX hybrid decode enabled:
+
+```bash
+uv run --python .venv/bin/python app.py \
+  --ref-audio inputs/my_voice.m4a \
+  --ref-text "Hello, this is my reference voice sample." \
+  --text "This sentence is generated in my cloned voice." \
+  --language English \
+  --mlx-hybrid \
+  --output outputs/my_clone_mlx.wav
+```
+
+If you want MLX decoder only (PyTorch quantizer):
+
+```bash
+uv run --python .venv/bin/python app.py ... --mlx-hybrid --mlx-disable-quantizer
 ```
 
 ## Standalone Notes
