@@ -5,3 +5,16 @@ inputs/*
 
 outputs/*
 !outputs/demo_clone_standalone2.wav
+
+# Python virtual environments
+.venv/
+venv/
+env/
+
+# Python cache/bytecode
+__pycache__/
+*.pyc
+*.pyo
+
+# System files
+.DS_Store
