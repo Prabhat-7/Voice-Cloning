@@ -2,12 +2,14 @@ from __future__ import annotations
 
 import argparse
 import socket
+import time
 from datetime import datetime
 from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
 import gradio as gr
+import numpy as np
 import soundfile as sf
 import torch
 
@@ -495,6 +497,72 @@ def clone_voice(
     return output_path.as_posix(), output_path.as_posix(), status
 
 
+def preload_tts_runtime(
+    model_dir: str,
+    hf_model: str,
+    device: str,
+    dtype: str,
+    use_mlx_hybrid: bool,
+    use_mlx_quantizer: bool,
+    eris_src_dir: str,
+    warmup_tts: bool,
+) -> None:
+    effective_device = detect_device() if device == "auto" else device
+    effective_dtype_name = resolve_dtype_name(dtype, effective_device)
+
+    local_model_path = Path(model_dir).expanduser()
+    model_source = local_model_path.as_posix() if local_model_path.exists() else hf_model
+
+    started = time.perf_counter()
+    try:
+        model = load_model(
+            model_source=model_source,
+            device=effective_device,
+            dtype_name=effective_dtype_name,
+            use_mlx_hybrid=use_mlx_hybrid,
+            use_mlx_quantizer=use_mlx_quantizer,
+            eris_src_dir=eris_src_dir,
+        )
+    except Exception as exc:
+        print(f"[startup] TTS preload skipped: {type(exc).__name__}: {exc}")
+        return
+
+    load_elapsed = time.perf_counter() - started
+    print(
+        f"[startup] TTS model preloaded in {load_elapsed:.2f}s "
+        f"(device={effective_device}, dtype={effective_dtype_name}, mlx_hybrid={use_mlx_hybrid})."
+    )
+
+    if not warmup_tts:
+        return
+
+    warm_started = time.perf_counter()
+    try:
+        sr = 16000
+        duration_seconds = 0.30
+        t = np.linspace(0.0, duration_seconds, int(sr * duration_seconds), endpoint=False, dtype=np.float32)
+        warm_ref_audio = (0.01 * np.sin(2.0 * np.pi * 220.0 * t)).astype(np.float32)
+        prompt_items = model.create_voice_clone_prompt(
+            ref_audio=(warm_ref_audio, sr),
+            ref_text=None,
+            x_vector_only_mode=True,
+        )
+        model.generate_voice_clone(
+            text="Hi.",
+            language="English",
+            voice_clone_prompt=prompt_items,
+            x_vector_only_mode=True,
+            non_streaming_mode=True,
+            max_new_tokens=48,
+            do_sample=False,
+            subtalker_dosample=False,
+        )
+        warm_elapsed = time.perf_counter() - warm_started
+        print(f"[startup] TTS warmup completed in {warm_elapsed:.2f}s.")
+    except Exception as exc:
+        print(f"[startup] TTS warmup skipped: {type(exc).__name__}: {exc}")
+
+
 def build_ui(
     default_model_dir: str,
     default_hf_model: str,
@@ -631,10 +699,22 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--model-dir", default=DEFAULT_MODEL_DIR.as_posix())
     parser.add_argument("--hf-model", default=DEFAULT_HF_MODEL)
     parser.add_argument("--stt-model", default=resolve_default_stt_model())
-    parser.add_argument("--device", default="auto")
+    parser.add_argument("--device", default="mps")
     parser.add_argument("--dtype", default="auto", choices=["auto", "float16", "bfloat16", "float32"])
     parser.add_argument("--mlx-hybrid", action="store_true")
     parser.add_argument("--mlx-disable-quantizer", action="store_true")
+    parser.add_argument(
+        "--preload-tts",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="Preload TTS model at startup to reduce first-generation latency.",
+    )
+    parser.add_argument(
+        "--warmup-tts",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="Run one synthetic warmup inference at startup to initialize device kernels.",
+    )
     parser.add_argument("--eris-src-dir", default="eris-voice/src")
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=7860)
@@ -644,6 +724,17 @@ def parse_args() -> argparse.Namespace:
 
 def main() -> None:
     args = parse_args()
+    if args.preload_tts:
+        preload_tts_runtime(
+            model_dir=args.model_dir,
+            hf_model=args.hf_model,
+            device=args.device,
+            dtype=args.dtype,
+            use_mlx_hybrid=args.mlx_hybrid,
+            use_mlx_quantizer=not args.mlx_disable_quantizer,
+            eris_src_dir=args.eris_src_dir,
+            warmup_tts=args.warmup_tts,
+        )
     demo = build_ui(
         default_model_dir=args.model_dir,
         default_hf_model=args.hf_model,

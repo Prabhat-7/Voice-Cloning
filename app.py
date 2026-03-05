@@ -74,7 +74,7 @@ def parse_args() -> argparse.Namespace:
         help="Local model folder. If missing, falls back to Hugging Face model id.",
     )
     parser.add_argument("--hf-model", default=DEFAULT_HF_MODEL, help="Hugging Face model id fallback.")
-    parser.add_argument("--device", default="auto", help="auto, mps, cpu, cuda:0, ...")
+    parser.add_argument("--device", default="mps", help="mps, auto, cpu, cuda:0, ...")
     parser.add_argument("--dtype", default="auto", choices=["auto", "float16", "bfloat16", "float32"])
     parser.add_argument(
         "--mlx-hybrid",

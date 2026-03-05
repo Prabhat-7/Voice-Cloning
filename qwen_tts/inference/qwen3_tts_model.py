@@ -351,6 +351,11 @@ class Qwen3TTSModel:
             subtalker_top_p=1.0,
             subtalker_temperature=0.9,
             max_new_tokens=2048,
+            # Stabilize sampling when logits contain NaN/Inf on some devices/dtypes.
+            remove_invalid_values=True,
+            renormalize_logits=True,
+            subtalker_remove_invalid_values=True,
+            subtalker_renormalize_logits=True,
         )
 
         def pick(name: str, user_val: Any) -> Any:
@@ -372,8 +377,56 @@ class Qwen3TTSModel:
             subtalker_top_p=pick("subtalker_top_p", subtalker_top_p),
             subtalker_temperature=pick("subtalker_temperature", subtalker_temperature),
             max_new_tokens=pick("max_new_tokens", max_new_tokens),
+            remove_invalid_values=kwargs.get(
+                "remove_invalid_values",
+                self.generate_defaults.get("remove_invalid_values", hard_defaults["remove_invalid_values"]),
+            ),
+            renormalize_logits=kwargs.get(
+                "renormalize_logits",
+                self.generate_defaults.get("renormalize_logits", hard_defaults["renormalize_logits"]),
+            ),
+            subtalker_remove_invalid_values=kwargs.get(
+                "subtalker_remove_invalid_values",
+                self.generate_defaults.get(
+                    "subtalker_remove_invalid_values",
+                    hard_defaults["subtalker_remove_invalid_values"],
+                ),
+            ),
+            subtalker_renormalize_logits=kwargs.get(
+                "subtalker_renormalize_logits",
+                self.generate_defaults.get(
+                    "subtalker_renormalize_logits",
+                    hard_defaults["subtalker_renormalize_logits"],
+                ),
+            ),
         )
         return merged
+
+    @staticmethod
+    def _is_invalid_probability_runtime_error(exc: RuntimeError) -> bool:
+        msg = str(exc).lower()
+        return (
+            "probability tensor contains" in msg
+            and ("inf" in msg or "nan" in msg or "< 0" in msg or "element < 0" in msg)
+        )
+
+    def _generate_with_safe_retry(self, generate_inputs: Dict[str, Any], gen_kwargs: Dict[str, Any]):
+        try:
+            return self.model.generate(**generate_inputs, **gen_kwargs)
+        except RuntimeError as exc:
+            if not self._is_invalid_probability_runtime_error(exc):
+                raise
+            safe_kwargs = dict(gen_kwargs)
+            # Retry with deterministic decoding to avoid multinomial over invalid probs.
+            safe_kwargs.update(
+                do_sample=False,
+                subtalker_dosample=False,
+                remove_invalid_values=True,
+                renormalize_logits=True,
+                subtalker_remove_invalid_values=True,
+                subtalker_renormalize_logits=True,
+            )
+            return self.model.generate(**generate_inputs, **safe_kwargs)
 
     # voice clone model
     @torch.inference_mode()
@@ -638,14 +691,16 @@ class Qwen3TTSModel:
 
         gen_kwargs = self._merge_generate_kwargs(**kwargs)
 
-        talker_codes_list, _ = self.model.generate(
-            input_ids=input_ids,
-            instruct_ids=instruct_ids,
-            ref_ids=ref_ids,
-            voice_clone_prompt=voice_clone_prompt_dict,
-            languages=languages,
-            non_streaming_mode=non_streaming_mode,
-            **gen_kwargs,
+        talker_codes_list, _ = self._generate_with_safe_retry(
+            generate_inputs=dict(
+                input_ids=input_ids,
+                instruct_ids=instruct_ids,
+                ref_ids=ref_ids,
+                voice_clone_prompt=voice_clone_prompt_dict,
+                languages=languages,
+                non_streaming_mode=non_streaming_mode,
+            ),
+            gen_kwargs=gen_kwargs,
         )
 
         codes_for_decode = []
@@ -755,12 +810,14 @@ class Qwen3TTSModel:
 
         gen_kwargs = self._merge_generate_kwargs(**kwargs)
 
-        talker_codes_list, _ = self.model.generate(
-            input_ids=input_ids,
-            instruct_ids=instruct_ids,
-            languages=languages,
-            non_streaming_mode=non_streaming_mode,
-            **gen_kwargs,
+        talker_codes_list, _ = self._generate_with_safe_retry(
+            generate_inputs=dict(
+                input_ids=input_ids,
+                instruct_ids=instruct_ids,
+                languages=languages,
+                non_streaming_mode=non_streaming_mode,
+            ),
+            gen_kwargs=gen_kwargs,
         )
 
         wavs, fs = self.model.speech_tokenizer.decode([{"audio_codes": c} for c in talker_codes_list])
@@ -865,13 +922,15 @@ class Qwen3TTSModel:
 
         gen_kwargs = self._merge_generate_kwargs(**kwargs)
 
-        talker_codes_list, _ = self.model.generate(
-            input_ids=input_ids,
-            instruct_ids=instruct_ids,
-            languages=languages,
-            speakers=speakers,
-            non_streaming_mode=non_streaming_mode,
-            **gen_kwargs,
+        talker_codes_list, _ = self._generate_with_safe_retry(
+            generate_inputs=dict(
+                input_ids=input_ids,
+                instruct_ids=instruct_ids,
+                languages=languages,
+                speakers=speakers,
+                non_streaming_mode=non_streaming_mode,
+            ),
+            gen_kwargs=gen_kwargs,
         )
 
         wavs, fs = self.model.speech_tokenizer.decode([{"audio_codes": c} for c in talker_codes_list])

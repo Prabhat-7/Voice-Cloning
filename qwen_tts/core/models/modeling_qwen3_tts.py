@@ -1653,6 +1653,8 @@ class Qwen3TTSTalkerForConditionalGeneration(Qwen3TTSTalkerTextPreTrainedModel, 
         subtalker_top_p=None,
         subtalker_top_k=None,
         subtalker_temperature=None,
+        subtalker_remove_invalid_values=None,
+        subtalker_renormalize_logits=None,
         **kwargs,
     ) -> CausalLMOutputWithPast:
         r"""
@@ -1675,6 +1677,8 @@ class Qwen3TTSTalkerForConditionalGeneration(Qwen3TTSTalkerTextPreTrainedModel, 
                 top_p=subtalker_top_p,
                 top_k=subtalker_top_k,
                 temperature=subtalker_temperature,
+                remove_invalid_values=subtalker_remove_invalid_values,
+                renormalize_logits=subtalker_renormalize_logits,
                 output_hidden_states=True,
                 return_dict_in_generate=True,
             )
@@ -2037,6 +2041,10 @@ class Qwen3TTSForConditionalGeneration(Qwen3TTSPreTrainedModel, GenerationMixin)
         subtalker_top_k: int = 50,
         subtalker_top_p: float = 1.0,
         subtalker_temperature: float = 0.9,
+        remove_invalid_values: bool = True,
+        renormalize_logits: bool = True,
+        subtalker_remove_invalid_values: bool = True,
+        subtalker_renormalize_logits: bool = True,
         eos_token_id: Optional[int] = None,
         repetition_penalty: float = 1.05,
         **kwargs,
@@ -2052,6 +2060,10 @@ class Qwen3TTSForConditionalGeneration(Qwen3TTSPreTrainedModel, GenerationMixin)
             "subtalker_top_k": subtalker_top_k,
             "subtalker_top_p": subtalker_top_p,
             "subtalker_temperature": subtalker_temperature,
+            "subtalker_remove_invalid_values": subtalker_remove_invalid_values,
+            "subtalker_renormalize_logits": subtalker_renormalize_logits,
+            "remove_invalid_values": remove_invalid_values,
+            "renormalize_logits": renormalize_logits,
             "eos_token_id": eos_token_id
             if eos_token_id is not None
             else self.config.talker_config.codec_eos_token_id,
@@ -2061,8 +2073,8 @@ class Qwen3TTSForConditionalGeneration(Qwen3TTSPreTrainedModel, GenerationMixin)
                 for i in range(self.config.talker_config.vocab_size - 1024, self.config.talker_config.vocab_size)
                 if i not in (self.config.talker_config.codec_eos_token_id,)
             ],
-            "output_hidden_states": getattr(kwargs, "output_hidden_states", True),
-            "return_dict_in_generate": getattr(kwargs, "return_dict_in_generate", True)
+            "output_hidden_states": kwargs.get("output_hidden_states", True),
+            "return_dict_in_generate": kwargs.get("return_dict_in_generate", True)
         }
         
         talker_input_embeds = [[] for _ in range(len(input_ids))]

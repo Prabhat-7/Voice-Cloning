@@ -59,6 +59,12 @@ Then open:
 
 - `http://127.0.0.1:7860`
 
+Startup behavior:
+
+- GUI now preloads the TTS model at launch and runs one short warmup inference by default.
+- This shifts cold-start overhead to startup so the first real clone request is faster.
+- Disable if needed with `--no-preload-tts` and/or `--no-warmup-tts`.
+
 GUI flow:
 
 - Upload or record reference audio
